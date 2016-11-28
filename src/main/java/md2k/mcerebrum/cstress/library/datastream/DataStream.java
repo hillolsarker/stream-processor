@@ -1,5 +1,9 @@
 package md2k.mcerebrum.cstress.library.datastream;
 
+import md2k.mcerebrum.cstress.library.structs.MetadataString;
+import md2k.mcerebrum.cstress.library.structs.MetadataType;
+
+import java.io.Serializable;
 import java.util.HashMap;
 
 /*
@@ -30,11 +34,11 @@ import java.util.HashMap;
  */
 
 
-public abstract class DataStream implements DataStreamInterface {
+public abstract class DataStream implements DataStreamInterface, Serializable {
 
-    public HashMap<String, Object> metadata;
+    public HashMap<String, MetadataType> metadata;
     public boolean preserve;
-    public DataPointInterface dataPointInterface;
+    public transient DataPointInterface dataPointInterface; //Needed
 
     /**
      * Retrieve stream name
@@ -42,6 +46,6 @@ public abstract class DataStream implements DataStreamInterface {
      * @return The unique stream name
      */
     public String getName() {
-        return (String) metadata.get("name");
+        return ((MetadataString) metadata.get("name")).value;
     }
 }

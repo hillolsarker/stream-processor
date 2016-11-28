@@ -44,7 +44,7 @@ public class CSVParser implements Iterable<CSVDataPoint> {
         CSVDataPoint tempPacket;
 
         String[] tokens;
-        int data;
+        double data;
         long timestamp;
 
         File file = new File(filename);
@@ -52,16 +52,15 @@ public class CSVParser implements Iterable<CSVDataPoint> {
         try {
             scanner = new Scanner(file);
             while (scanner.hasNext()) {
-                tokens = scanner.nextLine().split(",");
-                double ts = Double.parseDouble(tokens[0]);
+                tokens = scanner.nextLine().split(" ");
+                double ts = Double.parseDouble(tokens[1]);
                 timestamp = (long) ts;
-                data = (int) Double.parseDouble(tokens[1]);
+                data = Double.parseDouble(tokens[0]);
 
                 tempPacket = new CSVDataPoint(channel, timestamp, data);
                 this.data.add(tempPacket);
             }
-        } catch (FileNotFoundException e) {
-            e.printStackTrace();
+        } catch (FileNotFoundException ignored) {
         }
     }
 

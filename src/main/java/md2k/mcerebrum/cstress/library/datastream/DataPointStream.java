@@ -4,6 +4,8 @@ package md2k.mcerebrum.cstress.library.datastream;
 import md2k.mcerebrum.cstress.library.DescriptiveStatistics;
 import md2k.mcerebrum.cstress.library.SummaryStatistics;
 import md2k.mcerebrum.cstress.library.structs.DataPoint;
+import md2k.mcerebrum.cstress.library.structs.MetadataString;
+import md2k.mcerebrum.cstress.library.structs.MetadataType;
 import org.apache.commons.collections4.queue.CircularFifoQueue;
 
 import java.io.BufferedWriter;
@@ -63,8 +65,8 @@ public class DataPointStream extends DataStream {
     public DataPointStream(String name) {
         data = new ArrayList<DataPoint>();
         history = new CircularFifoQueue<DataPoint>(1);
-        metadata = new HashMap<String, Object>();
-        metadata.put("name", name);
+        metadata = new HashMap<String, MetadataType>();
+        metadata.put("name", new MetadataString(name));
         preserve = false;
         stats = new SummaryStatistics();
         descriptiveStats = new DescriptiveStatistics();
@@ -80,7 +82,6 @@ public class DataPointStream extends DataStream {
         this(name);
         history = new CircularFifoQueue<DataPoint>(historySize);
     }
-
 
     public DataPointStream(String name, List<DataPoint> dataPoints) {
         this(name);
@@ -139,8 +140,7 @@ public class DataPointStream extends DataStream {
                 writer.write(dp.timestamp + ", " + dp.value + "\n");
             }
             writer.close();
-        } catch (Exception e) {
-            e.printStackTrace();
+        } catch (Exception ignored) {
         }
     }
 
@@ -216,7 +216,7 @@ public class DataPointStream extends DataStream {
             descriptiveStats.addValue(dp.value);
 
             if (dataPointInterface != null) {
-                dataPointInterface.dataPointHandler((String) metadata.get("name"), new DataPoint(dp));
+                dataPointInterface.dataPointHandler(((MetadataString) metadata.get("name")).value, new DataPoint(dp));
             }
         }
     }

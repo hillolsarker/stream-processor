@@ -31,25 +31,41 @@ package md2k.mcerebrum.cstress;
  */
 
 import com.google.gson.Gson;
-import md2k.mcerebrum.PuffMarkerMain;
+
+import org.apache.commons.io.FileUtils;
+import org.apache.commons.math3.exception.NotANumberException;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.FilenameFilter;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.util.TreeMap;
+
 import md2k.mcerebrum.cstress.autosense.AUTOSENSE;
 import md2k.mcerebrum.cstress.autosense.PUFFMARKER;
-import md2k.mcerebrum.cstress.features.*;
+import md2k.mcerebrum.cstress.features.AccelerometerFeatures;
+import md2k.mcerebrum.cstress.features.AutosenseWristFeatures;
+import md2k.mcerebrum.cstress.features.CStressFeatureVector;
+import md2k.mcerebrum.cstress.features.ECGDataQuality;
+import md2k.mcerebrum.cstress.features.ECGFeatures;
+import md2k.mcerebrum.cstress.features.PuffMarker;
+import md2k.mcerebrum.cstress.features.RIPDataQuality;
+import md2k.mcerebrum.cstress.features.RIPFeatures;
+import md2k.mcerebrum.cstress.features.RIPPuffmarkerFeatures;
+import md2k.mcerebrum.cstress.features.SmokingEpisodeGeneration;
+import md2k.mcerebrum.cstress.features.StressEpisodeClassification;
 import md2k.mcerebrum.cstress.library.datastream.DataArrayStream;
 import md2k.mcerebrum.cstress.library.datastream.DataPointInterface;
 import md2k.mcerebrum.cstress.library.datastream.DataStreams;
 import md2k.mcerebrum.cstress.library.structs.DataPoint;
 import md2k.mcerebrum.cstress.library.structs.DataPointArray;
+import md2k.mcerebrum.cstress.library.structs.MetadataDouble;
+import md2k.mcerebrum.cstress.library.structs.MetadataInteger;
 import md2k.mcerebrum.cstress.library.structs.Model;
 import md2k.mcerebrum.cstress.library.structs.SVCModel;
-import org.apache.commons.io.FileUtils;
-import org.apache.commons.math3.exception.NotANumberException;
-import org.omg.PortableInterceptor.SYSTEM_EXCEPTION;
-
-import java.io.File;
-import java.io.FilenameFilter;
-import java.io.IOException;
-import java.util.TreeMap;
 
 /**
  * Main class that implements StreamProcessor and controls the data processing pipeline
@@ -60,12 +76,13 @@ public class StreamProcessor {
     private long windowSize;
     private String path = null;
     private DataStreams datastreams = new DataStreams();
-    private TreeMap<String,Object> models = new TreeMap<String,Object>();
+    private TreeMap<String, Object> models = new TreeMap<String, Object>();
+
 
     /**
      * Main constructor for StreamProcessor
      *
-     * @param windowSize  Time in milliseconds to segment and buffer data before processing
+     * @param windowSize Time in milliseconds to segment and buffer data before processing
      */
     public StreamProcessor(long windowSize) {
         this.windowSize = windowSize;
@@ -74,51 +91,76 @@ public class StreamProcessor {
     }
 
 
+    /**
+     * load and create a model object from a model file
+     *
+     * @param modelString JSON formatted string
+     */
+    public void loadModelFromString(String name, String modelString) {
+        Gson gson = new Gson();
+
+        Model genericModel = gson.fromJson(modelString, Model.class);
+        if (genericModel.getModelType().equals("svc"))
+            models.put(name, gson.fromJson(modelString, SVCModel.class));
+        //gson parse a JSON model file and create a SVMModel object, and add it to models
+    }
 
     /**
      * load and create a model object from a model file
+     *
      * @param path Path to the model file (in JSON format)
      */
     public void loadModel(String name, String path) {
         Gson gson = new Gson();
-        try
-        {
+        try {
             String jsonstring = FileUtils.readFileToString(new File(path));
-            Model genericModel = gson.fromJson(jsonstring,Model.class);
-            if(genericModel.getModelType().equals("svc"))
+            Model genericModel = gson.fromJson(jsonstring, Model.class);
+            if (genericModel.getModelType().equals("svc"))
                 models.put(name, gson.fromJson(jsonstring, SVCModel.class));
-        }
-        catch (IOException e)
-        {
-            e.printStackTrace();
+        } catch (IOException ignored) {
         }
         //gson parse a JSON model file and create a SVMModel object, and add it to models
     }
 
     private void configureDataStreams() {
         //Configure Data Streams
-        datastreams.getDataPointStream(StreamConstants.ORG_MD2K_CSTRESS_DATA_ECG).metadata.put("frequency", 64.0);
-        datastreams.getDataPointStream(StreamConstants.ORG_MD2K_CSTRESS_DATA_ECG).metadata.put("channelID", AUTOSENSE.CHEST_ECG);
+        datastreams.getDataPointStream(StreamConstants.ORG_MD2K_CSTRESS_DATA_ECG).metadata.put("frequency", new MetadataDouble(64.0));
+        datastreams.getDataPointStream(StreamConstants.ORG_MD2K_CSTRESS_DATA_ECG).metadata.put("channelID", new MetadataInteger(AUTOSENSE.CHEST_ECG));
 
-        datastreams.getDataPointStream(StreamConstants.ORG_MD2K_CSTRESS_DATA_RIP).metadata.put("frequency", 64.0 / 3.0);
-        datastreams.getDataPointStream(StreamConstants.ORG_MD2K_CSTRESS_DATA_RIP).metadata.put("channelID", AUTOSENSE.CHEST_RIP);
+        datastreams.getDataPointStream(StreamConstants.ORG_MD2K_CSTRESS_DATA_RIP).metadata.put("frequency", new MetadataDouble(64.0 / 3.0));
+        datastreams.getDataPointStream(StreamConstants.ORG_MD2K_CSTRESS_DATA_RIP).metadata.put("channelID", new MetadataInteger(AUTOSENSE.CHEST_RIP));
 
-        datastreams.getDataPointStream(StreamConstants.ORG_MD2K_CSTRESS_DATA_ACCELX).metadata.put("frequency", 64.0 / 6.0);
-        datastreams.getDataPointStream(StreamConstants.ORG_MD2K_CSTRESS_DATA_ACCELX).metadata.put("channelID", AUTOSENSE.CHEST_ACCEL_X);
+        datastreams.getDataPointStream(StreamConstants.ORG_MD2K_CSTRESS_DATA_ACCELX).metadata.put("frequency", new MetadataDouble(64.0 / 6.0));
+        datastreams.getDataPointStream(StreamConstants.ORG_MD2K_CSTRESS_DATA_ACCELX).metadata.put("channelID", new MetadataInteger(AUTOSENSE.CHEST_ACCEL_X));
 
-        datastreams.getDataPointStream(StreamConstants.ORG_MD2K_CSTRESS_DATA_ACCELY).metadata.put("frequency", 64.0 / 6.0);
-        datastreams.getDataPointStream(StreamConstants.ORG_MD2K_CSTRESS_DATA_ACCELY).metadata.put("channelID", AUTOSENSE.CHEST_ACCEL_X);
+        datastreams.getDataPointStream(StreamConstants.ORG_MD2K_CSTRESS_DATA_ACCELY).metadata.put("frequency", new MetadataDouble(64.0 / 6.0));
+        datastreams.getDataPointStream(StreamConstants.ORG_MD2K_CSTRESS_DATA_ACCELY).metadata.put("channelID", new MetadataInteger(AUTOSENSE.CHEST_ACCEL_X));
 
-        datastreams.getDataPointStream(StreamConstants.ORG_MD2K_CSTRESS_DATA_ACCELZ).metadata.put("frequency", 64.0 / 6.0);
-        datastreams.getDataPointStream(StreamConstants.ORG_MD2K_CSTRESS_DATA_ACCELZ).metadata.put("channelID", AUTOSENSE.CHEST_ACCEL_X);
+        datastreams.getDataPointStream(StreamConstants.ORG_MD2K_CSTRESS_DATA_ACCELZ).metadata.put("frequency", new MetadataDouble(64.0 / 6.0));
+        datastreams.getDataPointStream(StreamConstants.ORG_MD2K_CSTRESS_DATA_ACCELZ).metadata.put("channelID", new MetadataInteger(AUTOSENSE.CHEST_ACCEL_X));
 
-        datastreams.getDataPointStream(StreamConstants.ORG_MD2K_CSTRESS_PROBABILITY).metadata.put("frequency", 1000.0 / windowSize);
-        datastreams.getDataPointStream(StreamConstants.ORG_MD2K_CSTRESS_STRESSLABEL).metadata.put("frequency", 1000.0 / windowSize);
+        datastreams.getDataPointStream(StreamConstants.ORG_MD2K_CSTRESS_PROBABILITY).metadata.put("frequency", new MetadataDouble(1000.0 / windowSize));
+        datastreams.getDataPointStream(StreamConstants.ORG_MD2K_CSTRESS_STRESSLABEL).metadata.put("frequency", new MetadataDouble(1000.0 / windowSize));
 
-        datastreams.getDataPointStream(PUFFMARKER.ORG_MD2K_PUFF_MARKER_DATA_GYRO_X).metadata.put("frequency", 64.0 / 3.0); // TODO: complete!!
+        configurePuffMarkerWristDataStreams(PUFFMARKER.LEFT_WRIST, 16.0, 32.0);
+        configurePuffMarkerWristDataStreams(PUFFMARKER.RIGHT_WRIST, 16.0, 32.0);
+
     }
 
+    public void settingWristFrequencies(String wrist, double freqAccel, double freqGyro) {
+        configurePuffMarkerWristDataStreams(wrist, freqAccel, freqGyro);
+    }
 
+    private void configurePuffMarkerWristDataStreams(String wrist, double freqAccel, double freqGyro) {
+        datastreams.getDataPointStream(PUFFMARKER.ORG_MD2K_PUFF_MARKER_DATA_ACCEL_X + wrist).metadata.put("frequency", new MetadataDouble(freqAccel));
+        datastreams.getDataPointStream(PUFFMARKER.ORG_MD2K_PUFF_MARKER_DATA_ACCEL_Y + wrist).metadata.put("frequency", new MetadataDouble(freqAccel));
+        datastreams.getDataPointStream(PUFFMARKER.ORG_MD2K_PUFF_MARKER_DATA_ACCEL_Z + wrist).metadata.put("frequency", new MetadataDouble(freqAccel));
+
+        datastreams.getDataPointStream(PUFFMARKER.ORG_MD2K_PUFF_MARKER_DATA_GYRO_X + wrist).metadata.put("frequency", new MetadataDouble(freqGyro));
+        datastreams.getDataPointStream(PUFFMARKER.ORG_MD2K_PUFF_MARKER_DATA_GYRO_Y + wrist).metadata.put("frequency", new MetadataDouble(freqGyro));
+        datastreams.getDataPointStream(PUFFMARKER.ORG_MD2K_PUFF_MARKER_DATA_GYRO_Z + wrist).metadata.put("frequency", new MetadataDouble(freqGyro));
+
+    }
 
     /**
      * set the path for the feature files used by this stream processor
@@ -138,8 +180,6 @@ public class StreamProcessor {
     }
 
 
-
-
     /**
      * Main computation loop that processes all buffered data through several different classes
      */
@@ -147,59 +187,55 @@ public class StreamProcessor {
 
         try {
             //Data quality computations
-/*            try {
+            try {
                 ECGDataQuality ecgDQ = new ECGDataQuality(datastreams, AUTOSENSE.AUTOSENSE_ECG_QUALITY);
             } catch (IndexOutOfBoundsException e) {
-                System.err.println("ECGDataQuality Exception Handler: IndexOutOfBoundsException");
+                System.out.println("ECGDataQuality Exception Handler: IndexOutOfBoundsException");
             }
             try {
                 RIPDataQuality ripDQ = new RIPDataQuality(datastreams, AUTOSENSE.AUTOSENSE_RIP_QUALITY);
             } catch (IndexOutOfBoundsException e) {
-                System.err.println("RIPDataQuality Exception Handler: IndexOutOfBoundsException");
+                System.out.println("RIPDataQuality Exception Handler: IndexOutOfBoundsException");
             }
 
             //AutoSense features
             try {
                 AccelerometerFeatures af = new AccelerometerFeatures(datastreams, AUTOSENSE.ACTIVITY_THRESHOLD, AUTOSENSE.ACCEL_WINDOW_SIZE);
             } catch (IndexOutOfBoundsException e) {
-                System.err.println("AccelerometerFeatures Exception Handler: IndexOutOfBoundsException");
-            }*/
-//            try {
-//                ECGFeatures ef = new ECGFeatures(datastreams);
-//            } catch (IndexOutOfBoundsException e) {
-//                System.err.println("ECGFeatures Exception Handler: IndexOutOfBoundsException");
-//                e.printStackTrace();
-//            }
+                System.out.println("AccelerometerFeatures Exception Handler: IndexOutOfBoundsException");
+            }
+            try {
+                ECGFeatures ef = new ECGFeatures(datastreams);
+            } catch (IndexOutOfBoundsException e) {
+                System.out.println("ECGFeatures Exception Handler: IndexOutOfBoundsException");
+            }
             try {
                 RIPFeatures rf = new RIPFeatures(datastreams);
             } catch (IndexOutOfBoundsException e) {
-                e.printStackTrace();
-                System.err.println("RIPFeatures Exception Handler: IndexOutOfBoundsException");
+                System.out.println("RIPFeatures Exception Handler: IndexOutOfBoundsException");
             }
 
             try {
                 RIPPuffmarkerFeatures rpf = new RIPPuffmarkerFeatures(datastreams);
             } catch (IndexOutOfBoundsException e) {
-                e.printStackTrace();
-                System.err.println("RIPPuffmarkerFeatures Exception Handler: IndexOutOfBoundsException");
+                System.out.println("RIPPuffmarkerFeatures Exception Handler: IndexOutOfBoundsException");
             }
 
             try {
                 AutosenseWristFeatures leftWrist = new AutosenseWristFeatures(datastreams, PUFFMARKER.LEFT_WRIST);
             } catch (IndexOutOfBoundsException e) {
-                System.err.println("AutosenseWristFeatures Exception Handler: IndexOutOfBoundsException");
+                System.out.println("AutosenseWristFeatures Exception Handler: IndexOutOfBoundsException");
             }
 
             try {
                 AutosenseWristFeatures rightWrist = new AutosenseWristFeatures(datastreams, PUFFMARKER.RIGHT_WRIST);
             } catch (IndexOutOfBoundsException e) {
-                System.err.println("AutosenseWristFeatures Exception Handler: IndexOutOfBoundsException");
+                System.out.println("AutosenseWristFeatures Exception Handler: IndexOutOfBoundsException");
             }
 
 
         } catch (IndexOutOfBoundsException e) {
-            System.err.println("Stress Exception Handler: IndexOutOfBoundsException");
-            e.printStackTrace();
+            System.out.println("Stress Exception Handler: IndexOutOfBoundsException");
         }
 
 
@@ -212,13 +248,13 @@ public class StreamProcessor {
         try {
             CStressFeatureVector cs = new CStressFeatureVector(datastreams);
         } catch (NotANumberException e) {
-            System.err.println("Generate result error");
+            System.out.println("Generate result error");
         }
 
         try {
             PuffMarker pm = new PuffMarker(datastreams);
         } catch (NotANumberException e) {
-            System.err.println("PuffMarker: Generate result error");
+            System.out.println("PuffMarker: Generate result error");
         }
     }
 
@@ -241,8 +277,7 @@ public class StreamProcessor {
         try {
             SmokingEpisodeGeneration seg = new SmokingEpisodeGeneration(datastreams);
         } catch (IndexOutOfBoundsException e) {
-            System.err.println("SmokingEpisodeGeneration Exception Handler: IndexOutOfBoundsException");
-            e.printStackTrace();
+            System.out.println("SmokingEpisodeGeneration Exception Handler: IndexOutOfBoundsException");
         }
     }
 
@@ -251,15 +286,14 @@ public class StreamProcessor {
      */
     private void runpuffMarker() {
         SVCModel model = (SVCModel) models.get("puffMarkerModel");
-        DataArrayStream featurevector = datastreams.getDataArrayStream(StreamConstants.ORG_MD2K_PUFFMARKER_FV);
+        DataArrayStream featurevector = datastreams.getDataArrayStream(StreamConstants.ORG_MD2K_PUFFMARKER_FV_MINUTE);
 
         for (DataPointArray ap : featurevector.data) {
             double prob = model.computeProbability(ap);
             int label;
             if (prob > model.getLowBias()) {
                 label = PUFFMARKER.PUFF;
-            }
-            else if (prob < model.getLowBias())
+            } else if (prob < model.getLowBias())
                 label = PUFFMARKER.NOT_PUFF;
             else
                 label = PUFFMARKER.UNSURE;
@@ -268,15 +302,15 @@ public class StreamProcessor {
             datastreams.getDataPointStream(StreamConstants.ORG_MD2K_PUFFMARKER_PUFFLABEL_MINUTE).add(new DataPoint(ap.timestamp, label));
         }
     }
+
     /**
      * Method for running the cStress model on any available feature vectors to get corresponding stress probabilities
      */
     private void runcStress() {
-        SVCModel model = (SVCModel)models.get("cStressModel");
+        SVCModel model = (SVCModel) models.get("cStressModel");
         DataArrayStream featurevector = datastreams.getDataArrayStream(StreamConstants.ORG_MD2K_CSTRESS_FV);
 
-        for(DataPointArray ap: featurevector.data)
-        {
+        for (DataPointArray ap : featurevector.data) {
             double prob = model.computeProbability(ap);
             int label;
             if (prob > model.getHighBias())
@@ -320,7 +354,7 @@ public class StreamProcessor {
         try {
             StressEpisodeClassification sef = new StressEpisodeClassification(datastreams, windowSize);
         } catch (IndexOutOfBoundsException e) {
-            System.err.println("StressEpisodeClassification Exception Handler: IndexOutOfBoundsException");
+            System.out.println("StressEpisodeClassification Exception Handler: IndexOutOfBoundsException");
         }
     }
 
@@ -378,7 +412,6 @@ public class StreamProcessor {
                 (datastreams.getDataPointStream(PUFFMARKER.ORG_MD2K_PUFF_MARKER_DATA_LEFTWRIST_GYRO_Z)).add(dp);
                 break;
 
-
             case PUFFMARKER.RIGHTWRIST_ACCEL_X:
                 (datastreams.getDataPointStream(PUFFMARKER.ORG_MD2K_PUFF_MARKER_DATA_RIGHTWRIST_ACCEL_X)).add(dp);
                 break;
@@ -403,7 +436,6 @@ public class StreamProcessor {
                 (datastreams.getDataPointStream(PUFFMARKER.ORG_MD2K_PUFF_MARKER_DATA_RIGHTWRIST_GYRO_Z)).add(dp);
                 break;
 
-
             default:
                 System.out.println("NOT INTERESTED: " + dp);
                 break;
@@ -421,7 +453,54 @@ public class StreamProcessor {
 
 
     /**
+     * Export internal datastream state for purposes of resetting the applications and loading state back
+     *
+     * @param file File in which to store state
+     */
+    public boolean exportDatastreams(String filename) {
+        boolean result = false;
+        try {
+            FileOutputStream fos = new FileOutputStream(filename);
+            ObjectOutputStream oos = new ObjectOutputStream(fos);
+
+            oos.writeObject(datastreams);
+
+            oos.close();
+            fos.close();
+
+            result = true;
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return result;
+    }
+
+    /**
+     * Load internal datastream state for purposes of resetting the applications
+     *
+     * @param file File in which to load state from
+     */
+    public boolean importDatastreams(String filename) {
+        boolean result = false;
+
+        try {
+            FileInputStream fis = new FileInputStream(filename);
+            ObjectInputStream ois = new ObjectInputStream(fis);
+
+            datastreams = (DataStreams) ois.readObject();
+
+            ois.close();
+            fis.close();
+            result = true;
+        } catch (Exception e) {
+
+        }
+        return result;
+    }
+
+    /**
      * Handle registration of a callback interface
+     *
      * @param s Stream identifier
      */
     public void registerCallbackDataStream(String s) {
@@ -431,6 +510,7 @@ public class StreamProcessor {
 
     /**
      * Handle registration of a callback interface
+     *
      * @param s Stream identifier
      */
     public void registerCallbackDataArrayStream(String s) {
